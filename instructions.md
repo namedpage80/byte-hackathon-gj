@@ -10,9 +10,3 @@ RecieptPrinter Changes
     - The button should appear on the top right of the visible element
     - It should only be visible when hovering over the visible element
     - It should remove the text-element from the canvas when clicked
-
-
-
-    git config --global user.email "mikey78@hotmail.com"
-
-git config --global user.name "Guillermo"
