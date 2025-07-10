@@ -137,6 +137,18 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
     return [...this.elements];
   }
 
+  // Get the receipt data structure for saving
+  public getReceiptData(): CanvasElement[] {
+    return [...this.elements];
+  }
+
+  // Load receipt data structure and redraw
+  public loadReceiptData(elements: CanvasElement[]): void {
+    this.elements = [...elements];
+    this.elementIdCounter = Math.max(...elements.map(el => parseInt(el.id.split('_')[1]) || 0), 0);
+    this.redrawCanvasFromElements();
+  }
+
   // Remove an element by ID
   public removeElement(elementId: string): boolean {
     const index = this.elements.findIndex(el => el.id === elementId);

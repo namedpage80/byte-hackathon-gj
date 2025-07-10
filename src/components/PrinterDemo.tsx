@@ -107,6 +107,54 @@ export const PrinterDemo: React.FC = () => {
     }
   };
 
+  // --- Save and Load Handlers ---
+  const handleSave = () => {
+    if (printerRef.current && 'getReceiptData' in printerRef.current) {
+      const printer = printerRef.current as HTMLCanvasEpsonPrinter;
+      const receiptData = printer.getReceiptData();
+      
+      // Create a blob and download the file
+      const blob = new Blob([JSON.stringify(receiptData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'default.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      // Show success message
+      alert('Receipt saved to default.json successfully!');
+    }
+  };
+
+  const handleLoad = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file && printerRef.current && 'loadReceiptData' in printerRef.current) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const receiptData = JSON.parse(event.target?.result as string);
+            const printer = printerRef.current as HTMLCanvasEpsonPrinter;
+            printer.loadReceiptData(receiptData);
+            setRerender(v => v + 1);
+            alert('Receipt loaded successfully!');
+          } catch (error) {
+            console.error('Error loading receipt data:', error);
+            alert('Error loading receipt data. Please check the file format.');
+          }
+        };
+        reader.readAsText(file);
+      }
+    };
+    input.click();
+  };
+
   // --- UI ---
   
 
@@ -117,9 +165,17 @@ export const PrinterDemo: React.FC = () => {
         <h1 className="text-lg font-semibold text-gray-100">Low Level Receipt Printer Demo</h1>
       </div>
       <div className="w-[400px] space-y-6 pt-24">
-        <button className="bg-red-700 hover:bg-red-800 text-white font-bold px-4 py-3 rounded-lg w-full mb-4 shadow transition" onClick={handleClear}>
-          Clear Receipt
-        </button>
+        <div className="flex gap-2 mb-4">
+          <button className="bg-red-700 hover:bg-red-800 text-white font-bold px-4 py-3 rounded-lg flex-1 shadow transition" onClick={handleClear}>
+            Clear Receipt
+          </button>
+          <button className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-3 rounded-lg flex-1 shadow transition" onClick={handleSave}>
+            Save
+          </button>
+          <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-3 rounded-lg flex-1 shadow transition" onClick={handleLoad}>
+            Load
+          </button>
+        </div>
         {/* addText */}
         <div className="border rounded p-4 space-y-2 bg-slate-800 border-slate-700">
           <div className="font-bold">addText</div>

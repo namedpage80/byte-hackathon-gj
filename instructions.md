@@ -29,6 +29,6 @@ RecieptPrinter Changes
     e. Similar to the remove button, it should do a full re-render when any element has been reordered
 
 5. Add a save and load button
-    a. Add a save button to save the underlying datastructure to a file called default.json
+    a. Add a save button to save the underlying reciept datastructure to a file called default.json
     b. Add a load button to load default.json file if it exists
     c. After succesfull load of default.json, it should render the reciept correctly.
