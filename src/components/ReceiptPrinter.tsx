@@ -35,14 +35,22 @@ export const ReceiptPrinter: React.FC<ReceiptPrinterProps> = ({
   const [draggedElement, setDraggedElement] = useState<string | null>(null);
   const [dragOverElement, setDragOverElement] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
+  const [isPrinterReady, setIsPrinterReady] = useState(false);
 
   useEffect(() => {
     if (canvasRef.current && !printerRef.current) {
       const canvas = canvasRef.current;
       printerRef.current = new HTMLCanvasEpsonPrinter(canvas);
-      if (onPrinterReady) {
-        onPrinterReady(printerRef.current);
-      }
+      
+      // Ensure the printer is fully initialized before calling onPrinterReady
+      setTimeout(() => {
+        if (printerRef.current) {
+          setIsPrinterReady(true);
+          if (onPrinterReady) {
+            onPrinterReady(printerRef.current);
+          }
+        }
+      }, 50);
     }
   }, [onPrinterReady]);
 

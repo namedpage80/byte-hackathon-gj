@@ -11,6 +11,7 @@ import { useEffect } from 'react';
 export const PrinterDemo: React.FC = () => {
   const printerRef = useRef<EpsonPrinter | null>(null);
   const [, setRerender] = useState(0);
+  const [printerReady, setPrinterReady] = useState(false);
 
   // --- State for each method ---
   // addText
@@ -48,6 +49,10 @@ export const PrinterDemo: React.FC = () => {
   // --- Printer Ready ---
   const handlePrinterReady = (printer: EpsonPrinter) => {
     printerRef.current = printer;
+    // Add a small delay to ensure the printer is fully initialized
+    setTimeout(() => {
+      setPrinterReady(true);
+    }, 100);
   };
 
   // --- Method Calls ---
@@ -109,6 +114,11 @@ export const PrinterDemo: React.FC = () => {
 
   // --- Save and Load Handlers ---
   const handleSave = () => {
+    if (!printerReady) {
+      alert('Printer is not ready yet. Please wait a moment and try again.');
+      return;
+    }
+    
     if (printerRef.current && 'getReceiptData' in printerRef.current) {
       const printer = printerRef.current as HTMLCanvasEpsonPrinter;
       const receiptData = printer.getReceiptData();
@@ -130,20 +140,58 @@ export const PrinterDemo: React.FC = () => {
   };
 
   const handleLoad = () => {
+    // Check if printer is ready first
+    if (!printerReady) {
+      alert('Printer is not ready yet. Please wait for the printer to initialize and try again.');
+      return;
+    }
+    
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (file && printerRef.current && 'loadReceiptData' in printerRef.current) {
+      if (file) {
         const reader = new FileReader();
         reader.onload = (event) => {
           try {
             const receiptData = JSON.parse(event.target?.result as string);
-            const printer = printerRef.current as HTMLCanvasEpsonPrinter;
-            printer.loadReceiptData(receiptData);
-            setRerender(v => v + 1);
-            alert('Receipt loaded successfully!');
+            
+            // Function to load the receipt data
+            const loadReceipt = () => {
+              if (printerRef.current && 'loadReceiptData' in printerRef.current) {
+                const printer = printerRef.current as HTMLCanvasEpsonPrinter;
+                printer.loadReceiptData(receiptData);
+                setRerender(v => v + 1);
+                alert('Receipt loaded successfully!');
+                return true;
+              }
+              return false;
+            };
+            
+            // Try to load immediately
+            if (!loadReceipt()) {
+              // If not ready, wait and retry with a timeout
+              let attempts = 0;
+              const maxAttempts = 50; // 5 seconds max
+              
+              const checkPrinterReady = () => {
+                attempts++;
+                if (loadReceipt()) {
+                  return; // Success
+                }
+                
+                if (attempts >= maxAttempts) {
+                  alert('Printer failed to initialize. Please refresh the page and try again.');
+                  return;
+                }
+                
+                // Try again in 100ms
+                setTimeout(checkPrinterReady, 100);
+              };
+              
+              checkPrinterReady();
+            }
           } catch (error) {
             console.error('Error loading receipt data:', error);
             alert('Error loading receipt data. Please check the file format.');
@@ -165,14 +213,40 @@ export const PrinterDemo: React.FC = () => {
         <h1 className="text-lg font-semibold text-gray-100">Low Level Receipt Printer Demo</h1>
       </div>
       <div className="w-[400px] space-y-6 pt-24">
+        {/* Printer Status */}
+        <div className="flex items-center gap-2 mb-2">
+          <div className={`w-3 h-3 rounded-full ${printerReady ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+          <span className="text-sm text-gray-300">
+            {printerReady ? 'Printer Ready' : 'Initializing Printer...'}
+          </span>
+        </div>
+        
         <div className="flex gap-2 mb-4">
           <button className="bg-red-700 hover:bg-red-800 text-white font-bold px-4 py-3 rounded-lg flex-1 shadow transition" onClick={handleClear}>
             Clear Receipt
           </button>
-          <button className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-3 rounded-lg flex-1 shadow transition" onClick={handleSave}>
+          <button 
+            className={`font-bold px-4 py-3 rounded-lg flex-1 shadow transition ${
+              printerReady 
+                ? 'bg-green-600 hover:bg-green-700 text-white' 
+                : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+            }`} 
+            onClick={handleSave}
+            disabled={!printerReady}
+            title={printerReady ? 'Save receipt to file' : 'Waiting for printer to initialize...'}
+          >
             Save
           </button>
-          <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-3 rounded-lg flex-1 shadow transition" onClick={handleLoad}>
+          <button 
+            className={`font-bold px-4 py-3 rounded-lg flex-1 shadow transition ${
+              printerReady 
+                ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+            }`} 
+            onClick={handleLoad}
+            disabled={!printerReady}
+            title={printerReady ? 'Load receipt from file' : 'Waiting for printer to initialize...'}
+          >
             Load
           </button>
         </div>

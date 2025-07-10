@@ -1,7 +1,7 @@
 Project Tenents
 * Keep refactoring to a minimum
 * Avoid unecessary changes
-* Use establed patterns existing in the codebase
+* Use established patterns existing in the codebase
 * This project is a hot-reloading project
 * Leverage the existing tailwind styling motif
 
