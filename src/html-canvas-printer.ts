@@ -32,11 +32,28 @@ interface CutElementData {
   // No additional data needed for cut elements
 }
 
-type ElementData = TextElementData | BarcodeElementData | QRCodeElementData | ImageElementData | FeedLineElementData | CutElementData;
+interface TextAlignElementData {
+  alignment: TextAlignment;
+}
+
+interface TextSizeElementData {
+  width: number;
+  height: number;
+}
+
+interface TextStyleElementData {
+  style: TextStyle;
+}
+
+interface LineSpaceElementData {
+  space: number;
+}
+
+type ElementData = TextElementData | BarcodeElementData | QRCodeElementData | ImageElementData | FeedLineElementData | CutElementData | TextAlignElementData | TextSizeElementData | TextStyleElementData | LineSpaceElementData;
 
 interface CanvasElement {
   id: string;
-  type: 'text' | 'barcode' | 'qrcode' | 'image' | 'feedline' | 'cut';
+  type: 'text' | 'barcode' | 'qrcode' | 'image' | 'feedline' | 'cut' | 'textalign' | 'textsize' | 'textstyle' | 'linespace';
   x: number;
   y: number;
   width: number;
@@ -152,8 +169,11 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
     this.elements = [];
     this.elementIdCounter = 0;
     
-    // Redraw all remaining elements
+    // Redraw all remaining elements in order, maintaining proper state
     elementsToRedraw.forEach(element => {
+      // Update current Y position to where this element should be
+      this.currentY = element.startY;
+      
       switch (element.type) {
         case 'text':
           this.redrawTextElement(element);
@@ -172,6 +192,18 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
           break;
         case 'cut':
           this.redrawCutElement(element);
+          break;
+        case 'textalign':
+          this.redrawTextAlignElement(element);
+          break;
+        case 'textsize':
+          this.redrawTextSizeElement(element);
+          break;
+        case 'textstyle':
+          this.redrawTextStyleElement(element);
+          break;
+        case 'linespace':
+          this.redrawLineSpaceElement(element);
           break;
       }
     });
@@ -434,6 +466,135 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
     });
   }
 
+  private redrawTextAlignElement(element: CanvasElement): void {
+    if (element.type !== 'textalign') return;
+    const { alignment } = element.data as TextAlignElementData;
+    this.currentY = element.startY;
+    this.currentTextAlign = alignment;
+    
+    // Draw the styling element as grayed out text
+    this.ctx.save();
+    this.ctx.font = '12px monospace';
+    this.ctx.fillStyle = '#999';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText(`[Text Alignment: ${alignment}]`, 10, this.currentY);
+    this.ctx.restore();
+    const endY = this.currentY + 20;
+    
+    // Track the element
+    const elementId = `textalign_${++this.elementIdCounter}`;
+    this.elements.push({
+      id: elementId,
+      type: 'textalign',
+      x: 10,
+      y: element.startY,
+      width: this.paperWidth - 20,
+      height: 20,
+      data: { alignment },
+      startY: element.startY,
+      endY
+    });
+    
+    this.currentY = endY;
+  }
+
+  private redrawTextSizeElement(element: CanvasElement): void {
+    if (element.type !== 'textsize') return;
+    const { width, height } = element.data as TextSizeElementData;
+    this.currentY = element.startY;
+    this.currentTextSize = { width, height };
+    
+    // Draw the styling element as grayed out text
+    this.ctx.save();
+    this.ctx.font = '12px monospace';
+    this.ctx.fillStyle = '#999';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText(`[Text Size: ${width}x${height}]`, 10, this.currentY);
+    this.ctx.restore();
+    const endY = this.currentY + 20;
+    
+    // Track the element
+    const elementId = `textsize_${++this.elementIdCounter}`;
+    this.elements.push({
+      id: elementId,
+      type: 'textsize',
+      x: 10,
+      y: element.startY,
+      width: this.paperWidth - 20,
+      height: 20,
+      data: { width, height },
+      startY: element.startY,
+      endY
+    });
+    
+    this.currentY = endY;
+  }
+
+  private redrawTextStyleElement(element: CanvasElement): void {
+    if (element.type !== 'textstyle') return;
+    const { style } = element.data as TextStyleElementData;
+    this.currentY = element.startY;
+    this.currentTextStyle = style;
+    
+    // Draw the styling element as grayed out text
+    this.ctx.save();
+    this.ctx.font = '12px monospace';
+    this.ctx.fillStyle = '#999';
+    this.ctx.textAlign = 'left';
+    const styleText = `[Text Style: ${style.bold ? 'bold ' : ''}${style.underline ? 'underline ' : ''}${style.fontFamily || 'default'}]`;
+    this.ctx.fillText(styleText, 10, this.currentY);
+    this.ctx.restore();
+    const endY = this.currentY + 20;
+    
+    // Track the element
+    const elementId = `textstyle_${++this.elementIdCounter}`;
+    this.elements.push({
+      id: elementId,
+      type: 'textstyle',
+      x: 10,
+      y: element.startY,
+      width: this.paperWidth - 20,
+      height: 20,
+      data: { style },
+      startY: element.startY,
+      endY
+    });
+    
+    this.currentY = endY;
+  }
+
+  private redrawLineSpaceElement(element: CanvasElement): void {
+    if (element.type !== 'linespace') return;
+    const { space } = element.data as LineSpaceElementData;
+    this.currentY = element.startY;
+    this.lineSpacing = space;
+    
+    // Draw the styling element as grayed out text
+    this.ctx.save();
+    this.ctx.font = '12px monospace';
+    this.ctx.fillStyle = '#999';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText(`[Line Spacing: ${space}px]`, 10, this.currentY);
+    this.ctx.restore();
+    const endY = this.currentY + 20;
+    
+    // Track the element
+    const elementId = `linespace_${++this.elementIdCounter}`;
+    this.elements.push({
+      id: elementId,
+      type: 'linespace',
+      x: 10,
+      y: element.startY,
+      width: this.paperWidth - 20,
+      height: 20,
+      data: { space },
+      startY: element.startY,
+      endY
+    });
+    
+    this.currentY = endY;
+  }
+
   private ensureCanvasHeight(requiredHeight: number): void {
     if (requiredHeight > this.canvas.height) {
       const newCanvas = document.createElement('canvas');
@@ -537,6 +698,30 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
 
   addTextAlign(alignment: TextAlignment): void {
     this.currentTextAlign = alignment;
+    
+    // Track the styling element
+    const elementId = `textalign_${++this.elementIdCounter}`;
+    this.elements.push({
+      id: elementId,
+      type: 'textalign',
+      x: 10,
+      y: this.currentY,
+      width: this.paperWidth - 20,
+      height: 20,
+      data: { alignment },
+      startY: this.currentY,
+      endY: this.currentY + 20
+    });
+    
+    // Draw the styling element as grayed out text
+    this.ctx.save();
+    this.ctx.font = '12px monospace';
+    this.ctx.fillStyle = '#999';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText(`[Text Alignment: ${alignment}]`, 10, this.currentY);
+    this.ctx.restore();
+    this.currentY += 20;
+    this.ensureCanvasHeight(this.currentY);
   }
 
   addTextSize(width: number, height: number): void {
@@ -544,10 +729,59 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
       width: Math.max(1, Math.min(8, width)),
       height: Math.max(1, Math.min(8, height))
     };
+    
+    // Track the styling element
+    const elementId = `textsize_${++this.elementIdCounter}`;
+    this.elements.push({
+      id: elementId,
+      type: 'textsize',
+      x: 10,
+      y: this.currentY,
+      width: this.paperWidth - 20,
+      height: 20,
+      data: { width: this.currentTextSize.width, height: this.currentTextSize.height },
+      startY: this.currentY,
+      endY: this.currentY + 20
+    });
+    
+    // Draw the styling element as grayed out text
+    this.ctx.save();
+    this.ctx.font = '12px monospace';
+    this.ctx.fillStyle = '#999';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText(`[Text Size: ${this.currentTextSize.width}x${this.currentTextSize.height}]`, 10, this.currentY);
+    this.ctx.restore();
+    this.currentY += 20;
+    this.ensureCanvasHeight(this.currentY);
   }
 
   addTextStyle(style: TextStyle): void {
     this.currentTextStyle = { ...this.currentTextStyle, ...style };
+    
+    // Track the styling element
+    const elementId = `textstyle_${++this.elementIdCounter}`;
+    this.elements.push({
+      id: elementId,
+      type: 'textstyle',
+      x: 10,
+      y: this.currentY,
+      width: this.paperWidth - 20,
+      height: 20,
+      data: { style: this.currentTextStyle },
+      startY: this.currentY,
+      endY: this.currentY + 20
+    });
+    
+    // Draw the styling element as grayed out text
+    this.ctx.save();
+    this.ctx.font = '12px monospace';
+    this.ctx.fillStyle = '#999';
+    this.ctx.textAlign = 'left';
+    const styleText = `[Text Style: ${this.currentTextStyle.bold ? 'bold ' : ''}${this.currentTextStyle.underline ? 'underline ' : ''}${this.currentTextStyle.fontFamily || 'default'}]`;
+    this.ctx.fillText(styleText, 10, this.currentY);
+    this.ctx.restore();
+    this.currentY += 20;
+    this.ensureCanvasHeight(this.currentY);
   }
 
   addFeedLine(lines: number): void {
@@ -573,6 +807,30 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
 
   addLineSpace(space: number): void {
     this.lineSpacing = space;
+    
+    // Track the styling element
+    const elementId = `linespace_${++this.elementIdCounter}`;
+    this.elements.push({
+      id: elementId,
+      type: 'linespace',
+      x: 10,
+      y: this.currentY,
+      width: this.paperWidth - 20,
+      height: 20,
+      data: { space },
+      startY: this.currentY,
+      endY: this.currentY + 20
+    });
+    
+    // Draw the styling element as grayed out text
+    this.ctx.save();
+    this.ctx.font = '12px monospace';
+    this.ctx.fillStyle = '#999';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText(`[Line Spacing: ${space}px]`, 10, this.currentY);
+    this.ctx.restore();
+    this.currentY += 20;
+    this.ensureCanvasHeight(this.currentY);
   }
 
   addBarcode(data: string, type: BarcodeType, options?: BarcodeOptions): void {

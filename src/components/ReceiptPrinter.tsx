@@ -12,7 +12,7 @@ interface ReceiptPrinterProps {
 
 interface CanvasElement {
   id: string;
-  type: 'text' | 'barcode' | 'qrcode' | 'image' | 'feedline' | 'cut';
+  type: 'text' | 'barcode' | 'qrcode' | 'image' | 'feedline' | 'cut' | 'textalign' | 'textsize' | 'textstyle' | 'linespace';
   x: number;
   y: number;
   width: number;
