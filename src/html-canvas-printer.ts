@@ -147,6 +147,391 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
     return true;
   }
 
+  // Reorder elements by moving an element from one position to another
+  public reorderElement(elementId: string, newIndex: number): boolean {
+    console.log('reorderElement called:', { elementId, newIndex, elementsCount: this.elements.length });
+    
+    const currentIndex = this.elements.findIndex(el => el.id === elementId);
+    console.log('Current index:', currentIndex);
+    
+    if (currentIndex === -1 || newIndex < 0 || newIndex >= this.elements.length) {
+      console.log('Invalid indexes:', { currentIndex, newIndex, elementsLength: this.elements.length });
+      return false;
+    }
+    
+    // Remove element from current position and insert at new position
+    const [element] = this.elements.splice(currentIndex, 1);
+    this.elements.splice(newIndex, 0, element);
+    
+    console.log('Element reordered, redrawing canvas...');
+    
+    // Redraw canvas with new order
+    this.redrawCanvasFromElements();
+    return true;
+  }
+
+  // Redraw canvas from existing elements without recreating them
+  private redrawCanvasFromElements(): void {
+    // Clear the canvas
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.fillStyle = 'white';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.fillStyle = 'black';
+    
+    // Reset printer state
+    this.currentY = 0;
+    this.currentTextAlign = 'left';
+    this.currentTextStyle = {};
+    this.currentTextSize = { width: 1, height: 1 };
+    this.lineSpacing = 30;
+    this.ctx.font = `${this.baseFontSize}px ${this.baseFont}`;
+    this.ctx.textBaseline = 'top';
+    
+    // Redraw all elements in their new order, updating positions
+    for (const element of this.elements) {
+      this.redrawElementAtCurrentPosition(element);
+    }
+  }
+
+  // Redraw a single element at the current position
+  private redrawElementAtCurrentPosition(element: CanvasElement): void {
+    switch (element.type) {
+      case 'text':
+        this.redrawTextElementAtPosition(element);
+        break;
+      case 'barcode':
+        this.redrawBarcodeElementAtPosition(element);
+        break;
+      case 'qrcode':
+        this.redrawQRCodeElementAtPosition(element);
+        break;
+      case 'image':
+        this.redrawImageElementAtPosition(element);
+        break;
+      case 'feedline':
+        this.redrawFeedLineElementAtPosition(element);
+        break;
+      case 'cut':
+        this.redrawCutElementAtPosition(element);
+        break;
+      case 'textalign':
+        this.redrawTextAlignElementAtPosition(element);
+        break;
+      case 'textsize':
+        this.redrawTextSizeElementAtPosition(element);
+        break;
+      case 'textstyle':
+        this.redrawTextStyleElementAtPosition(element);
+        break;
+      case 'linespace':
+        this.redrawLineSpaceElementAtPosition(element);
+        break;
+    }
+  }
+
+  // Redraw text element at current position
+  private redrawTextElementAtPosition(element: CanvasElement): void {
+    if (element.type !== 'text') return;
+    const { text } = element.data as TextElementData;
+    // Use the current global style state (set by previous styling elements)
+    const fontSize = this.baseFontSize * this.currentTextSize.height;
+    this.ctx.font = `${this.currentTextStyle?.bold ? 'bold' : ''} ${fontSize}px ${this.currentTextStyle?.fontFamily || this.baseFont}`;
+    this.ctx.fillStyle = 'black';
+    const alignment = this.currentTextAlign;
+    const style = this.currentTextStyle;
+    const words = text.split(' ');
+    let currentLine = words[0];
+    const lines: string[] = [];
+    for (let i = 1; i < words.length; i++) {
+      const word = words[i];
+      const width = this.ctx.measureText(currentLine + ' ' + word).width;
+      if (width < this.paperWidth - 20) {
+        currentLine += ' ' + word;
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    lines.push(currentLine);
+    const lineHeight = fontSize + this.lineSpacing;
+    const startY = this.currentY;
+    const totalHeight = this.currentY + lines.length * lineHeight;
+    this.ensureCanvasHeight(totalHeight);
+    lines.forEach((line, idx) => {
+      let x = 0;
+      let y = this.currentY + idx * lineHeight;
+      switch (alignment) {
+        case 'center':
+          this.ctx.textAlign = 'center';
+          x = this.paperWidth / 2;
+          break;
+        case 'right':
+          this.ctx.textAlign = 'right';
+          x = this.paperWidth - 10;
+          break;
+        default:
+          this.ctx.textAlign = 'left';
+          x = 10;
+      }
+      this.ctx.fillText(line, x, y);
+      if (style?.underline) {
+        const metrics = this.ctx.measureText(line);
+        let underlineStart = x;
+        let underlineEnd = x;
+        switch (alignment) {
+          case 'center':
+            underlineStart = x - metrics.width / 2;
+            underlineEnd = x + metrics.width / 2;
+            break;
+          case 'right':
+            underlineStart = x - metrics.width;
+            underlineEnd = x;
+            break;
+          default:
+            underlineStart = x;
+            underlineEnd = x + metrics.width;
+        }
+        this.ctx.beginPath();
+        this.ctx.moveTo(underlineStart, y + fontSize + 2);
+        this.ctx.lineTo(underlineEnd, y + fontSize + 2);
+        this.ctx.stroke();
+      }
+    });
+    // Update element position
+    element.x = 10;
+    element.y = startY;
+    element.width = this.paperWidth - 20;
+    element.height = totalHeight - startY;
+    element.startY = startY;
+    element.endY = totalHeight;
+    this.currentY = totalHeight;
+  }
+
+  // Redraw barcode element at current position
+  private redrawBarcodeElementAtPosition(element: CanvasElement): void {
+    if (element.type !== 'barcode') return;
+    const { data, type, options } = element.data as BarcodeElementData;
+    
+    const barcodeHeight = options?.height || 100;
+    const startY = this.currentY;
+    this.ensureCanvasHeight(this.currentY + barcodeHeight + 20);
+    
+    this.ctx.save();
+    this.ctx.strokeStyle = 'black';
+    this.ctx.strokeRect(10, this.currentY, this.paperWidth - 20, barcodeHeight);
+    this.ctx.fillStyle = 'black';
+    this.ctx.font = '12px monospace';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(`Barcode: ${data}`, this.paperWidth / 2, this.currentY + barcodeHeight + 5);
+    this.ctx.restore();
+    
+    // Update element position
+    element.x = 10;
+    element.y = startY;
+    element.width = this.paperWidth - 20;
+    element.height = barcodeHeight + 20;
+    element.startY = startY;
+    element.endY = this.currentY + barcodeHeight + 20;
+    
+    this.currentY += barcodeHeight + 20;
+  }
+
+  // Redraw QR code element at current position
+  private redrawQRCodeElementAtPosition(element: CanvasElement): void {
+    if (element.type !== 'qrcode') return;
+    const { data, options } = element.data as QRCodeElementData;
+    
+    const qrSize = options?.size || 200;
+    const startY = this.currentY;
+    this.ensureCanvasHeight(this.currentY + qrSize + 20);
+    
+    this.ctx.save();
+    this.ctx.strokeStyle = 'black';
+    this.ctx.strokeRect(10, this.currentY, qrSize, qrSize);
+    this.ctx.fillStyle = 'black';
+    this.ctx.font = '12px monospace';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(`QR Code: ${data}`, this.paperWidth / 2, this.currentY + qrSize + 5);
+    this.ctx.restore();
+    
+    // Update element position
+    element.x = 10;
+    element.y = startY;
+    element.width = qrSize;
+    element.height = qrSize + 20;
+    element.startY = startY;
+    element.endY = this.currentY + qrSize + 20;
+    
+    this.currentY += qrSize + 20;
+  }
+
+  // Redraw image element at current position
+  private redrawImageElementAtPosition(element: CanvasElement): void {
+    if (element.type !== 'image') return;
+    const { imageData, options } = element.data as ImageElementData;
+    
+    const startY = this.currentY;
+    this.ensureCanvasHeight(this.currentY + imageData.height + 20);
+    
+    this.ctx.save();
+    this.ctx.putImageData(imageData, 10, this.currentY);
+    this.ctx.fillStyle = 'black';
+    this.ctx.font = '12px monospace';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('Image', this.paperWidth / 2, this.currentY + imageData.height + 5);
+    this.ctx.restore();
+    
+    // Update element position
+    element.x = 10;
+    element.y = startY;
+    element.width = imageData.width;
+    element.height = imageData.height + 20;
+    element.startY = startY;
+    element.endY = this.currentY + imageData.height + 20;
+    
+    this.currentY += imageData.height + 20;
+  }
+
+  // Redraw feed line element at current position
+  private redrawFeedLineElementAtPosition(element: CanvasElement): void {
+    if (element.type !== 'feedline') return;
+    const { lines } = element.data as FeedLineElementData;
+    
+    const startY = this.currentY;
+    const feedHeight = lines * this.lineSpacing;
+    this.ensureCanvasHeight(this.currentY + feedHeight);
+    
+    // Update element position
+    element.x = 0;
+    element.y = startY;
+    element.width = this.paperWidth;
+    element.height = feedHeight;
+    element.startY = startY;
+    element.endY = this.currentY + feedHeight;
+    
+    this.currentY += feedHeight;
+  }
+
+  // Redraw cut element at current position
+  private redrawCutElementAtPosition(element: CanvasElement): void {
+    if (element.type !== 'cut') return;
+    
+    const startY = this.currentY;
+    this.ensureCanvasHeight(this.currentY + 20);
+    
+    this.ctx.save();
+    this.ctx.strokeStyle = '#666';
+    this.ctx.setLineDash([5, 5]);
+    this.ctx.beginPath();
+    this.ctx.moveTo(10, this.currentY + 10);
+    this.ctx.lineTo(this.paperWidth - 10, this.currentY + 10);
+    this.ctx.stroke();
+    this.ctx.restore();
+    
+    // Update element position
+    element.x = 10;
+    element.y = startY;
+    element.width = this.paperWidth - 20;
+    element.height = 20;
+    element.startY = startY;
+    element.endY = this.currentY + 20;
+    
+    this.currentY += 20;
+  }
+
+  // Redraw text align element at current position
+  private redrawTextAlignElementAtPosition(element: CanvasElement): void {
+    if (element.type !== 'textalign') return;
+    const { alignment } = element.data as TextAlignElementData;
+    this.currentTextAlign = alignment;
+    const startY = this.currentY;
+    this.ensureCanvasHeight(this.currentY + 20);
+    this.ctx.save();
+    this.ctx.fillStyle = '#999';
+    this.ctx.font = '12px monospace';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(`Text Align: ${alignment}`, this.paperWidth / 2, this.currentY + 5);
+    this.ctx.restore();
+    // Update element position
+    element.x = 0;
+    element.y = startY;
+    element.width = this.paperWidth;
+    element.height = 20;
+    element.startY = startY;
+    element.endY = this.currentY + 20;
+    this.currentY += 20;
+  }
+
+  // Redraw text size element at current position
+  private redrawTextSizeElementAtPosition(element: CanvasElement): void {
+    if (element.type !== 'textsize') return;
+    const { width, height } = element.data as TextSizeElementData;
+    this.currentTextSize = { width, height };
+    const startY = this.currentY;
+    this.ensureCanvasHeight(this.currentY + 20);
+    this.ctx.save();
+    this.ctx.fillStyle = '#999';
+    this.ctx.font = '12px monospace';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(`Text Size: ${width}x${height}`, this.paperWidth / 2, this.currentY + 5);
+    this.ctx.restore();
+    // Update element position
+    element.x = 0;
+    element.y = startY;
+    element.width = this.paperWidth;
+    element.height = 20;
+    element.startY = startY;
+    element.endY = this.currentY + 20;
+    this.currentY += 20;
+  }
+
+  // Redraw text style element at current position
+  private redrawTextStyleElementAtPosition(element: CanvasElement): void {
+    if (element.type !== 'textstyle') return;
+    const { style } = element.data as TextStyleElementData;
+    this.currentTextStyle = style;
+    const startY = this.currentY;
+    this.ensureCanvasHeight(this.currentY + 20);
+    this.ctx.save();
+    this.ctx.fillStyle = '#999';
+    this.ctx.font = '12px monospace';
+    this.ctx.textAlign = 'center';
+    const styleText = `Text Style: ${style.bold ? 'Bold' : ''} ${style.underline ? 'Underline' : ''} ${style.fontFamily || 'Default'}`.trim();
+    this.ctx.fillText(styleText, this.paperWidth / 2, this.currentY + 5);
+    this.ctx.restore();
+    // Update element position
+    element.x = 0;
+    element.y = startY;
+    element.width = this.paperWidth;
+    element.height = 20;
+    element.startY = startY;
+    element.endY = this.currentY + 20;
+    this.currentY += 20;
+  }
+
+  // Redraw line space element at current position
+  private redrawLineSpaceElementAtPosition(element: CanvasElement): void {
+    if (element.type !== 'linespace') return;
+    const { space } = element.data as LineSpaceElementData;
+    this.lineSpacing = space;
+    const startY = this.currentY;
+    this.ensureCanvasHeight(this.currentY + 20);
+    this.ctx.save();
+    this.ctx.fillStyle = '#999';
+    this.ctx.font = '12px monospace';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(`Line Space: ${space}px`, this.paperWidth / 2, this.currentY + 5);
+    this.ctx.restore();
+    // Update element position
+    element.x = 0;
+    element.y = startY;
+    element.width = this.paperWidth;
+    element.height = 20;
+    element.startY = startY;
+    element.endY = this.currentY + 20;
+    this.currentY += 20;
+  }
+
   // Redraw the entire canvas after element removal
   private redrawCanvas(): void {
     // Clear the canvas
@@ -169,44 +554,41 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
     this.elements = [];
     this.elementIdCounter = 0;
     
-    // Redraw all remaining elements in order, maintaining proper state
-    elementsToRedraw.forEach(element => {
-      // Update current Y position to where this element should be
-      this.currentY = element.startY;
-      
+    // Redraw all remaining elements in order, recalculating positions and styles from scratch
+    for (const element of elementsToRedraw) {
       switch (element.type) {
         case 'text':
-          this.redrawTextElement(element);
+          this.addText((element.data as any).text, (element.data as any).style);
           break;
         case 'barcode':
-          this.redrawBarcodeElement(element);
+          this.addBarcode((element.data as any).data, (element.data as any).type, (element.data as any).options);
           break;
         case 'qrcode':
-          this.redrawQRCodeElement(element);
+          this.addQRCode((element.data as any).data, (element.data as any).options);
           break;
         case 'image':
-          this.redrawImageElement(element);
+          this.addImage((element.data as any).imageData, (element.data as any).options);
           break;
         case 'feedline':
-          this.redrawFeedLineElement(element);
+          this.addFeedLine((element.data as any).lines);
           break;
         case 'cut':
-          this.redrawCutElement(element);
+          this.cutPaper();
           break;
         case 'textalign':
-          this.redrawTextAlignElement(element);
+          this.addTextAlign((element.data as any).alignment);
           break;
         case 'textsize':
-          this.redrawTextSizeElement(element);
+          this.addTextSize((element.data as any).width, (element.data as any).height);
           break;
         case 'textstyle':
-          this.redrawTextStyleElement(element);
+          this.addTextStyle((element.data as any).style);
           break;
         case 'linespace':
-          this.redrawLineSpaceElement(element);
+          this.addLineSpace((element.data as any).space);
           break;
       }
-    });
+    }
   }
 
   private redrawTextElement(element: CanvasElement): void {
@@ -214,7 +596,6 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
     const { text, style, alignment } = element.data as TextElementData;
     this.currentTextStyle = style || {};
     this.currentTextAlign = alignment || 'left';
-    this.currentY = element.startY;
     
     // Redraw text without tracking (to avoid duplicate tracking)
     const fontSize = this.baseFontSize * this.currentTextSize.height;
@@ -301,7 +682,6 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
   private redrawBarcodeElement(element: CanvasElement): void {
     if (element.type !== 'barcode') return;
     const { data, type, options } = element.data as BarcodeElementData;
-    this.currentY = element.startY;
     
     const barcodeHeight = options?.height || 100;
     this.ensureCanvasHeight(this.currentY + barcodeHeight + 20);
@@ -335,7 +715,6 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
   private redrawQRCodeElement(element: CanvasElement): void {
     if (element.type !== 'qrcode') return;
     const { data, options } = element.data as QRCodeElementData;
-    this.currentY = element.startY;
     
     const size = options?.size || 200;
     this.ensureCanvasHeight(this.currentY + size + 20);
@@ -374,7 +753,6 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
   private redrawImageElement(element: CanvasElement): void {
     if (element.type !== 'image') return;
     const { imageData, options } = element.data as ImageElementData;
-    this.currentY = element.startY;
     
     const width = options?.width || imageData.width;
     const height = options?.height || (imageData.height * (width / imageData.width));
@@ -416,7 +794,6 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
 
   private redrawFeedLineElement(element: CanvasElement): void {
     if (element.type !== 'feedline') return;
-    this.currentY = element.startY;
     const lineHeight = this.baseFontSize * this.currentTextSize.height;
     const { lines } = element.data as FeedLineElementData;
     this.currentY += lines * (lineHeight + this.lineSpacing);
@@ -438,7 +815,6 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
   }
 
   private redrawCutElement(element: CanvasElement): void {
-    this.currentY = element.startY;
     
     this.ctx.save();
     this.ctx.setLineDash([10, 5]);
@@ -469,7 +845,6 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
   private redrawTextAlignElement(element: CanvasElement): void {
     if (element.type !== 'textalign') return;
     const { alignment } = element.data as TextAlignElementData;
-    this.currentY = element.startY;
     this.currentTextAlign = alignment;
     
     // Draw the styling element as grayed out text
@@ -501,7 +876,6 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
   private redrawTextSizeElement(element: CanvasElement): void {
     if (element.type !== 'textsize') return;
     const { width, height } = element.data as TextSizeElementData;
-    this.currentY = element.startY;
     this.currentTextSize = { width, height };
     
     // Draw the styling element as grayed out text
@@ -533,7 +907,6 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
   private redrawTextStyleElement(element: CanvasElement): void {
     if (element.type !== 'textstyle') return;
     const { style } = element.data as TextStyleElementData;
-    this.currentY = element.startY;
     this.currentTextStyle = style;
     
     // Draw the styling element as grayed out text
@@ -566,7 +939,6 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
   private redrawLineSpaceElement(element: CanvasElement): void {
     if (element.type !== 'linespace') return;
     const { space } = element.data as LineSpaceElementData;
-    this.currentY = element.startY;
     this.lineSpacing = space;
     
     // Draw the styling element as grayed out text
